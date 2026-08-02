@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using InferQueue.Core.Jobs;
 
 namespace InferQueue.Api.Contracts;
@@ -7,7 +8,7 @@ public sealed record JobResponse(
     string Status,
     string Model,
     int Attempts,
-    string? Result,
+    JsonNode? Result,
     string? Error,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt)
@@ -18,7 +19,9 @@ public sealed record JobResponse(
         job.Status.ToString(),
         job.Model,
         job.Attempts,
-        job.Result,
+        // A coluna e jsonb e guarda JSON. Devolver a string crua faria o cliente receber
+        // um JSON escapado dentro de outro e ter que desserializar duas vezes.
+        job.Result is null ? null : JsonNode.Parse(job.Result),
         job.Error,
         job.CreatedAt,
         job.CompletedAt);

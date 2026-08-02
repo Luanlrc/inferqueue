@@ -27,5 +27,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapHealthChecks("/health");
 app.MapJobEndpoints();
+app.MapUsageEndpoints();
 
 app.Run();
