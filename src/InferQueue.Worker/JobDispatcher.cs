@@ -11,6 +11,7 @@ public sealed class JobDispatcher(
     IServiceScopeFactory scopeFactory,
     IOptions<WorkerOptions> options,
     RetryPolicy retryPolicy,
+    PricingCatalog pricing,
     TimeProvider clock,
     ILogger<JobDispatcher> logger) : BackgroundService
 {
@@ -98,15 +99,32 @@ public sealed class JobDispatcher(
         {
             var completion = await llm.CompleteAsync(job.Model, job.InputText, ct);
 
+            var cost = pricing.Estimate(
+                job.Model,
+                completion.PromptTokens,
+                completion.CompletionTokens);
+
+            if (cost is null)
+            {
+                logger.LogWarning(
+                    "Modelo {Model} nao esta na tabela de precos; o job {JobId} fica sem custo registrado.",
+                    job.Model, job.Id);
+            }
+
             job.MarkDone(
                 completion.Content,
                 completion.PromptTokens,
                 completion.CompletionTokens,
+                cost,
                 clock.GetUtcNow());
 
             logger.LogInformation(
-                "Job {JobId} concluido em {Model} ({PromptTokens}+{CompletionTokens} tokens).",
-                job.Id, job.Model, completion.PromptTokens, completion.CompletionTokens);
+                "Job {JobId} concluido em {Model} ({PromptTokens}+{CompletionTokens} tokens, {Cost}).",
+                job.Id,
+                job.Model,
+                completion.PromptTokens,
+                completion.CompletionTokens,
+                cost is null ? "custo desconhecido" : $"US$ {cost:0.000000}");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
