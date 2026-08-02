@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace InferQueue.Core.Jobs;
 
 /// <summary>
@@ -67,4 +69,47 @@ public sealed class Job
             CreatedAt = now
         };
     }
+
+    /// <summary>
+    /// Registra o sucesso. Libera o lease para que a linha nao pareca mais em posse de ninguem.
+    /// </summary>
+    public void MarkDone(string content, int promptTokens, int completionTokens, DateTimeOffset now)
+    {
+        EnsureProcessing();
+
+        // A coluna e jsonb, entao o que entra aqui precisa ser JSON valido.
+        // Serializar aqui dentro mantem essa invariante junto da entidade.
+        Result = JsonSerializer.Serialize(new { content }, ResultSerializerOptions);
+        PromptTokens = promptTokens;
+        CompletionTokens = completionTokens;
+        Error = null;
+        LockedUntil = null;
+        Status = JobStatus.Done;
+        CompletedAt = now;
+    }
+
+    /// <summary>
+    /// Manda o job para a dead-letter. Hoje qualquer falha cai direto aqui;
+    /// a decisao entre retentar e desistir chega junto com o backoff.
+    /// </summary>
+    public void MarkDead(string error, DateTimeOffset now)
+    {
+        EnsureProcessing();
+
+        Error = error;
+        LockedUntil = null;
+        Status = JobStatus.Dead;
+        CompletedAt = now;
+    }
+
+    private void EnsureProcessing()
+    {
+        if (Status is not JobStatus.Processing)
+        {
+            throw new InvalidOperationException(
+                $"Job {Id} esta em {Status}; so um job em {nameof(JobStatus.Processing)} pode ser finalizado.");
+        }
+    }
+
+    private static readonly JsonSerializerOptions ResultSerializerOptions = new(JsonSerializerDefaults.Web);
 }
