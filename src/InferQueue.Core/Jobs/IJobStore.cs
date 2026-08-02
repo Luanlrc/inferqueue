@@ -21,5 +21,17 @@ public interface IJobStore
         DateTimeOffset now,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Retoma jobs cujo lease expirou — worker que morreu no meio do processamento.
+    /// Devolve-os ainda em <see cref="JobStatus.Processing"/>, porem com o lease renovado
+    /// em nome de quem chamou, para que a decisao de retentar ou matar seja tomada
+    /// pelo dominio sem risco de outro processo mexer na mesma linha.
+    /// </summary>
+    Task<IReadOnlyList<Job>> ReclaimExpiredAsync(
+        int batchSize,
+        TimeSpan leaseDuration,
+        DateTimeOffset now,
+        CancellationToken ct = default);
+
     Task UpdateAsync(Job job, CancellationToken ct = default);
 }

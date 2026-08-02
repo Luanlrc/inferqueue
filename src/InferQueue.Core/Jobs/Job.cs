@@ -89,17 +89,52 @@ public sealed class Job
     }
 
     /// <summary>
-    /// Manda o job para a dead-letter. Hoje qualquer falha cai direto aqui;
-    /// a decisao entre retentar e desistir chega junto com o backoff.
+    /// Registra a falha e decide o destino do job: volta para a fila com espera,
+    /// ou vai para a dead-letter.
     /// </summary>
-    public void MarkDead(string error, DateTimeOffset now)
+    /// <param name="isRetryable">
+    /// Falso para erros que nao adianta repetir (prompt recusado, chave invalida).
+    /// Nesses casos o job morre na hora, sem consumir as tentativas restantes.
+    /// </param>
+    public void Fail(string error, DateTimeOffset now, RetryPolicy policy, bool isRetryable = true)
     {
         EnsureProcessing();
+        ArgumentNullException.ThrowIfNull(policy);
 
         Error = error;
+
+        // Solta o lease em qualquer um dos dois caminhos: a linha nao esta mais em posse de ninguem.
         LockedUntil = null;
-        Status = JobStatus.Dead;
-        CompletedAt = now;
+
+        if (!isRetryable || Attempts >= policy.MaxAttempts)
+        {
+            Status = JobStatus.Dead;
+            CompletedAt = now;
+            return;
+        }
+
+        Status = JobStatus.Pending;
+        NextAttemptAt = now + policy.DelayFor(Attempts);
+    }
+
+    /// <summary>
+    /// Ressuscita um job da dead-letter, zerando o historico de tentativas.
+    /// E uma acao deliberada de operacao — normalmente depois de corrigir a causa da falha.
+    /// </summary>
+    public void Requeue(DateTimeOffset now)
+    {
+        if (Status is not JobStatus.Dead)
+        {
+            throw new InvalidOperationException(
+                $"Job {Id} esta em {Status}; so um job em {nameof(JobStatus.Dead)} pode ser reenfileirado.");
+        }
+
+        Status = JobStatus.Pending;
+        Attempts = 0;
+        Error = null;
+        LockedUntil = null;
+        NextAttemptAt = now;
+        CompletedAt = null;
     }
 
     private void EnsureProcessing()
