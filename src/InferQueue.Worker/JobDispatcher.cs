@@ -10,6 +10,7 @@ namespace InferQueue.Worker;
 public sealed class JobDispatcher(
     IServiceScopeFactory scopeFactory,
     IOptions<WorkerOptions> options,
+    RetryPolicy retryPolicy,
     TimeProvider clock,
     ILogger<JobDispatcher> logger) : BackgroundService
 {
@@ -116,9 +117,30 @@ public sealed class JobDispatcher(
         }
         catch (Exception ex)
         {
-            // Sem retry ainda: por enquanto qualquer falha vai direto para a dead-letter.
-            job.MarkDead(ex.Message, clock.GetUtcNow());
-            logger.LogError(ex, "Job {JobId} falhou.", job.Id);
+            // Erro nosso (bug, banco fora) e tratado como transitorio: nao ha por que
+            // condenar o job por uma falha que provavelmente nao se repete.
+            var isRetryable = ex is not LlmException llmFailure || llmFailure.IsTransient;
+
+            job.Fail(ex.Message, clock.GetUtcNow(), retryPolicy, isRetryable);
+
+            if (job.Status is JobStatus.Dead)
+            {
+                logger.LogError(
+                    ex,
+                    "Job {JobId} para a dead-letter apos {Attempts} tentativa(s){Reason}.",
+                    job.Id,
+                    job.Attempts,
+                    isRetryable ? string.Empty : " (falha permanente)");
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Job {JobId} falhou na tentativa {Attempts}/{Max}; nova tentativa em {Delay}.",
+                    job.Id,
+                    job.Attempts,
+                    retryPolicy.MaxAttempts,
+                    job.NextAttemptAt - clock.GetUtcNow());
+            }
         }
 
         await store.UpdateAsync(job, ct);
