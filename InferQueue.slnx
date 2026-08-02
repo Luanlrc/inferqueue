@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/InferQueue.Api/InferQueue.Api.csproj" />
+    <Project Path="src/InferQueue.Core/InferQueue.Core.csproj" />
+    <Project Path="src/InferQueue.Infrastructure/InferQueue.Infrastructure.csproj" />
+  </Folder>
+</Solution>
