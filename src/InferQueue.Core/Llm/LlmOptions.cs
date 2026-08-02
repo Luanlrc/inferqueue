@@ -27,4 +27,10 @@ public sealed class LlmOptions
     /// <summary>Teto de tempo para uma unica chamada ao provedor.</summary>
     [Range(1, 600)]
     public int TimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Preco por modelo. Modelo ausente daqui tem o job processado normalmente, mas
+    /// fica sem custo registrado — e aparece separado no relatorio de uso.
+    /// </summary>
+    public Dictionary<string, ModelPrice> Pricing { get; set; } = [];
 }

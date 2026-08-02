@@ -73,7 +73,16 @@ public sealed class Job
     /// <summary>
     /// Registra o sucesso. Libera o lease para que a linha nao pareca mais em posse de ninguem.
     /// </summary>
-    public void MarkDone(string content, int promptTokens, int completionTokens, DateTimeOffset now)
+    /// <param name="costUsd">
+    /// Nulo quando o modelo nao esta na tabela de precos. Fica nulo mesmo, em vez de zero:
+    /// zero seria uma mentira que sumiria no meio de um SUM.
+    /// </param>
+    public void MarkDone(
+        string content,
+        int promptTokens,
+        int completionTokens,
+        decimal? costUsd,
+        DateTimeOffset now)
     {
         EnsureProcessing();
 
@@ -82,6 +91,7 @@ public sealed class Job
         Result = JsonSerializer.Serialize(new { content }, ResultSerializerOptions);
         PromptTokens = promptTokens;
         CompletionTokens = completionTokens;
+        CostUsd = costUsd;
         Error = null;
         LockedUntil = null;
         Status = JobStatus.Done;

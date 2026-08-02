@@ -6,7 +6,25 @@ namespace InferQueue.Core.Jobs;
 /// </summary>
 public interface IJobStore
 {
+    /// <exception cref="DuplicateJobException">
+    /// Ja existe um job nao concluido com o mesmo hash — corrida entre duas requisicoes.
+    /// </exception>
     Task AddAsync(Job job, CancellationToken ct = default);
+
+    /// <summary>
+    /// Procura um job que torne desnecessario criar outro: um ainda em andamento com o
+    /// mesmo conteudo, ou um ja concluido depois de <paramref name="reusableSince"/>.
+    /// </summary>
+    Task<Job?> FindReusableAsync(
+        string inputHash,
+        DateTimeOffset reusableSince,
+        CancellationToken ct = default);
+
+    /// <summary>Consumo de tokens e custo dos jobs concluidos no intervalo, por modelo.</summary>
+    Task<IReadOnlyList<UsageByModel>> GetUsageAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
 
     Task<Job?> GetAsync(Guid id, CancellationToken ct = default);
 
