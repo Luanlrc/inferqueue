@@ -11,8 +11,10 @@ public static class JobHash
 {
     public static string Compute(string inputText, string model)
     {
-        // O \n separa os campos para que ("ab", "c") e ("a", "bc") nao colidam.
-        var bytes = Encoding.UTF8.GetBytes($"{model}\n{inputText}");
+        // O tamanho do modelo vai na frente para que os campos nao possam se confundir.
+        // Um separador simples nao bastaria: com "a\nb" + "c" e "a" + "b\nc" a concatenacao
+        // daria o mesmo texto, e dois pedidos diferentes teriam o mesmo hash.
+        var bytes = Encoding.UTF8.GetBytes($"{model.Length}:{model}:{inputText}");
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 }
