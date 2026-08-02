@@ -20,6 +20,9 @@ public static class JobEndpoints
         group.MapGet("/{id:guid}", GetAsync)
             .WithSummary("Consulta o estado de um job.");
 
+        group.MapPost("/{id:guid}/retry", RetryAsync)
+            .WithSummary("Devolve a fila um job que parou na dead-letter.");
+
         return app;
     }
 
@@ -65,10 +68,41 @@ public static class JobEndpoints
         var job = await store.GetAsync(id, ct);
 
         return job is null
-            ? TypedResults.Problem(
-                title: "Job nao encontrado.",
-                detail: $"Nao existe job com o id {id}.",
-                statusCode: StatusCodes.Status404NotFound)
+            ? NotFound(id)
             : TypedResults.Ok(JobResponse.From(job));
     }
+
+    private static async Task<Results<Ok<JobResponse>, ProblemHttpResult>> RetryAsync(
+        Guid id,
+        IJobStore store,
+        TimeProvider clock,
+        CancellationToken ct)
+    {
+        var job = await store.GetAsync(id, ct);
+
+        if (job is null)
+        {
+            return NotFound(id);
+        }
+
+        if (job.Status is not JobStatus.Dead)
+        {
+            // 409 e nao 400: o pedido esta bem formado, o estado atual do recurso e que nao permite.
+            return TypedResults.Problem(
+                title: "Job nao esta na dead-letter.",
+                detail: $"O job {id} esta em {job.Status}; so jobs em Dead podem ser reenfileirados.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        job.Requeue(clock.GetUtcNow());
+        await store.UpdateAsync(job, ct);
+
+        return TypedResults.Ok(JobResponse.From(job));
+    }
+
+    private static ProblemHttpResult NotFound(Guid id)
+        => TypedResults.Problem(
+            title: "Job nao encontrado.",
+            detail: $"Nao existe job com o id {id}.",
+            statusCode: StatusCodes.Status404NotFound);
 }
