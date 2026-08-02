@@ -1,6 +1,8 @@
 using InferQueue.Api.Contracts;
 using InferQueue.Core.Jobs;
+using InferQueue.Core.Llm;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
 
 namespace InferQueue.Api.Endpoints;
 
@@ -25,7 +27,7 @@ public static class JobEndpoints
         CreateJobRequest request,
         IJobStore store,
         TimeProvider clock,
-        IConfiguration configuration,
+        IOptions<LlmOptions> llmOptions,
         CancellationToken ct)
     {
         var errors = new Dictionary<string, string[]>();
@@ -45,7 +47,7 @@ public static class JobEndpoints
         }
 
         var model = string.IsNullOrWhiteSpace(request.Model)
-            ? configuration["Llm:DefaultModel"]!
+            ? llmOptions.Value.DefaultModel
             : request.Model;
 
         var job = Job.Create(request.Input!, model, clock.GetUtcNow());
