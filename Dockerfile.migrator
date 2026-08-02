@@ -1,0 +1,31 @@
+# Aplica as migrations antes de a aplicacao subir.
+#
+# Em vez de instalar o dotnet-ef na imagem final (que exigiria carregar o SDK junto),
+# o build gera um "migration bundle": um executavel autocontido que carrega as migrations
+# compiladas e as aplica. A imagem final fica sem SDK e sem runtime .NET.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY src/InferQueue.Core/InferQueue.Core.csproj src/InferQueue.Core/
+COPY src/InferQueue.Infrastructure/InferQueue.Infrastructure.csproj src/InferQueue.Infrastructure/
+COPY src/InferQueue.Api/InferQueue.Api.csproj src/InferQueue.Api/
+RUN dotnet restore src/InferQueue.Api/InferQueue.Api.csproj
+
+COPY src/ src/
+
+RUN dotnet tool install --global dotnet-ef
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+RUN dotnet ef migrations bundle \
+    --project src/InferQueue.Infrastructure \
+    --startup-project src/InferQueue.Api \
+    --target-runtime linux-x64 \
+    --self-contained \
+    --output /app/migrate
+
+# runtime-deps: so as bibliotecas nativas. O runtime .NET vai dentro do proprio bundle.
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
+WORKDIR /app
+COPY --from=build /app/migrate .
+
+ENTRYPOINT ["./migrate"]
