@@ -4,6 +4,12 @@ using Npgsql;
 
 namespace InferQueue.Infrastructure.Persistence;
 
+/// <remarks>
+/// Cada metodo e uma unidade de trabalho fechada: nada fica rastreado no change tracker
+/// entre chamadas. Sem isso, um <c>DequeueBatchAsync</c> feito no mesmo escopo de um
+/// <c>AddAsync</c> anterior devolveria a instancia em cache — ainda <c>Pending</c> — em vez
+/// do que o UPDATE retornou, e a stale entity passaria despercebida.
+/// </remarks>
 internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
 {
     private const string InFlightUniqueIndex = "ux_jobs_input_hash_inflight";
@@ -26,9 +32,11 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
         {
             // Outra requisicao criou o mesmo job no intervalo entre a consulta e o insert.
             // O banco e quem arbitra a corrida; aqui so traduzimos para a linguagem do dominio.
-            db.Entry(job).State = EntityState.Detached;
+            db.ChangeTracker.Clear();
             throw new DuplicateJobException(job.InputHash, ex);
         }
+
+        db.ChangeTracker.Clear();
     }
 
     public Task<Job?> GetAsync(Guid id, CancellationToken ct = default)
@@ -111,6 +119,9 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
                  WHERE j.id = c.id
                  RETURNING j.*
                  """)
+            // Sem isto o EF devolveria a instancia ja rastreada, com os valores de antes
+            // do UPDATE, em vez do que a clausula RETURNING trouxe.
+            .AsNoTracking()
             .ToListAsync(ct);
     }
 
@@ -145,6 +156,9 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
                  WHERE j.id = e.id
                  RETURNING j.*
                  """)
+            // Sem isto o EF devolveria a instancia ja rastreada, com os valores de antes
+            // do UPDATE, em vez do que a clausula RETURNING trouxe.
+            .AsNoTracking()
             .ToListAsync(ct);
     }
 
@@ -165,7 +179,10 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
         {
             // Acontece ao reenfileirar um job da dead-letter enquanto outro job com o
             // mesmo conteudo ja voltou a rodar.
+            db.ChangeTracker.Clear();
             throw new DuplicateJobException(job.InputHash, ex);
         }
+
+        db.ChangeTracker.Clear();
     }
 }
