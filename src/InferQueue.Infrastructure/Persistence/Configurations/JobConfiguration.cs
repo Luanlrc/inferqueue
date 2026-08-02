@@ -54,11 +54,10 @@ internal sealed class JobConfiguration : IEntityTypeConfiguration<Job>
             .HasDatabaseName("ix_jobs_pending")
             .HasFilter("status = 'Pending'");
 
-        // Deduplicacao: no maximo um job concluido por hash de entrada.
-        // Tambem parcial, senao um retry legitimo do mesmo texto seria bloqueado.
+        // Indice de busca por hash, sem unicidade. A deduplicacao acontece no enqueue,
+        // nao aqui: exigir hash unico entre os concluidos proibiria reprocessar o mesmo
+        // texto meses depois, que e um caso legitimo.
         builder.HasIndex(j => j.InputHash)
-            .HasDatabaseName("ux_jobs_input_hash_done")
-            .IsUnique()
-            .HasFilter("status = 'Done'");
+            .HasDatabaseName("ix_jobs_input_hash");
     }
 }
