@@ -6,6 +6,7 @@ using InferQueue.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace InferQueue.Infrastructure;
 
@@ -26,6 +27,14 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(LlmOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+
+        services.AddOptions<JobOptions>()
+            .Bind(configuration.GetSection(JobOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddSingleton(sp =>
+            new PricingCatalog(sp.GetRequiredService<IOptions<LlmOptions>>().Value.Pricing));
 
         AddLlmClient(services, configuration);
 

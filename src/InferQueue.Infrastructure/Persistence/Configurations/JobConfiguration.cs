@@ -57,7 +57,19 @@ internal sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         // Indice de busca por hash, sem unicidade. A deduplicacao acontece no enqueue,
         // nao aqui: exigir hash unico entre os concluidos proibiria reprocessar o mesmo
         // texto meses depois, que e um caso legitimo.
-        builder.HasIndex(j => j.InputHash)
-            .HasDatabaseName("ix_jobs_input_hash");
+        // Os dois indices abaixo cobrem a mesma coluna e por isso precisam da sobrecarga
+        // com nome: HasIndex(coluna) chamado duas vezes reconfigura o mesmo indice em vez
+        // de criar outro, e o primeiro desaparece sem aviso.
+
+        // Busca por hash no historico — e o que o enqueue usa para reaproveitar um Done.
+        builder.HasIndex(j => j.InputHash, "ix_jobs_input_hash");
+
+        // No maximo um job em andamento por conteudo. Parcial de proposito: o historico de
+        // concluidos pode repetir o hash a vontade; o que nao pode e haver duas execucoes
+        // simultaneas do mesmo trabalho. E este indice que resolve a corrida entre dois POSTs
+        // concorrentes — a consulta previa, sozinha, nao resolveria.
+        builder.HasIndex(j => j.InputHash, "ux_jobs_input_hash_inflight")
+            .IsUnique()
+            .HasFilter("status IN ('Pending', 'Processing')");
     }
 }
