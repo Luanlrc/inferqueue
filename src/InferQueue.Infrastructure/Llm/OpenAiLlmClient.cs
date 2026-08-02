@@ -23,31 +23,57 @@ internal sealed class OpenAiLlmClient(HttpClient http, IOptions<LlmOptions> opti
                 new ChatMessage("user", input)
             ]);
 
-        using var response = await http.PostAsJsonAsync("chat/completions", request, ct);
+        HttpResponseMessage response;
 
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            // O corpo do erro da OpenAI diz o motivo (rate limit, contexto, chave invalida).
-            // Vale carregar para o job, mas truncado: nao queremos um HTML de proxy inteiro no banco.
-            var body = await response.Content.ReadAsStringAsync(ct);
+            response = await http.PostAsJsonAsync("chat/completions", request, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            // DNS, conexao recusada, TLS. A rede pode voltar, entao vale retentar.
+            throw new LlmException($"Falha de rede ao chamar a OpenAI: {ex.Message}", isTransient: true, ex);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // Sem o filtro, um shutdown do worker viraria "timeout" e consumiria uma tentativa.
             throw new LlmException(
-                $"OpenAI respondeu {(int)response.StatusCode}: {Truncate(body, 500)}");
+                $"Chamada a OpenAI excedeu o timeout de {options.Value.TimeoutSeconds}s.",
+                isTransient: true,
+                ex);
         }
 
-        var payload = await response.Content.ReadFromJsonAsync<ChatResponse>(ct)
-            ?? throw new LlmException("OpenAI respondeu 2xx com corpo vazio.");
-
-        var content = payload.Choices?.FirstOrDefault()?.Message?.Content;
-
-        if (string.IsNullOrWhiteSpace(content))
+        using (response)
         {
-            throw new LlmException("OpenAI respondeu sem conteudo utilizavel.");
-        }
+            if (!response.IsSuccessStatusCode)
+            {
+                var status = (int)response.StatusCode;
 
-        return new LlmCompletion(
-            content,
-            payload.Usage?.PromptTokens ?? 0,
-            payload.Usage?.CompletionTokens ?? 0);
+                // 429 e 5xx passam sozinhos; 401 e 400 nao passam por mais que se insista.
+                var isTransient = status is 408 or 429 or >= 500;
+
+                // O corpo do erro da OpenAI diz o motivo (rate limit, contexto, chave invalida).
+                // Vale carregar para o job, mas truncado: nao queremos um HTML de proxy inteiro no banco.
+                var body = await response.Content.ReadAsStringAsync(ct);
+
+                throw new LlmException($"OpenAI respondeu {status}: {Truncate(body, 500)}", isTransient);
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<ChatResponse>(ct)
+                ?? throw new LlmException("OpenAI respondeu 2xx com corpo vazio.", isTransient: true);
+
+            var content = payload.Choices?.FirstOrDefault()?.Message?.Content;
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new LlmException("OpenAI respondeu sem conteudo utilizavel.", isTransient: true);
+            }
+
+            return new LlmCompletion(
+                content,
+                payload.Usage?.PromptTokens ?? 0,
+                payload.Usage?.CompletionTokens ?? 0);
+        }
     }
 
     private static string Truncate(string value, int max)

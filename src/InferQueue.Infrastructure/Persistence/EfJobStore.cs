@@ -56,6 +56,40 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
             .ToListAsync(ct);
     }
 
+    /// <remarks>
+    /// Mesmo padrao do dequeue, com uma diferenca: o status continua <c>Processing</c>.
+    /// A linha so troca de dono — o lease e renovado em nome deste reaper — e quem decide
+    /// se ela volta para a fila ou vai para a dead-letter e <see cref="Job.Fail"/>.
+    /// Fazer essa escolha em SQL duplicaria a regra de retry em dois lugares.
+    /// </remarks>
+    public async Task<IReadOnlyList<Job>> ReclaimExpiredAsync(
+        int batchSize,
+        TimeSpan leaseDuration,
+        DateTimeOffset now,
+        CancellationToken ct = default)
+    {
+        var lockedUntil = now.Add(leaseDuration);
+
+        return await db.Jobs
+            .FromSql(
+                $"""
+                 WITH expired AS (
+                     SELECT id
+                     FROM jobs
+                     WHERE status = 'Processing' AND locked_until < {now}
+                     ORDER BY locked_until
+                     LIMIT {batchSize}
+                     FOR UPDATE SKIP LOCKED
+                 )
+                 UPDATE jobs j
+                 SET locked_until = {lockedUntil}
+                 FROM expired e
+                 WHERE j.id = e.id
+                 RETURNING j.*
+                 """)
+            .ToListAsync(ct);
+    }
+
     public async Task UpdateAsync(Job job, CancellationToken ct = default)
     {
         db.Jobs.Update(job);
