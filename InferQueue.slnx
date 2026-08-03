@@ -3,5 +3,10 @@
     <Project Path="src/InferQueue.Api/InferQueue.Api.csproj" />
     <Project Path="src/InferQueue.Core/InferQueue.Core.csproj" />
     <Project Path="src/InferQueue.Infrastructure/InferQueue.Infrastructure.csproj" />
+    <Project Path="src/InferQueue.Worker/InferQueue.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/InferQueue.IntegrationTests/InferQueue.IntegrationTests.csproj" />
+    <Project Path="tests/InferQueue.UnitTests/InferQueue.UnitTests.csproj" />
   </Folder>
 </Solution>

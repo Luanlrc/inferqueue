@@ -1,3 +1,17 @@
+# Dois modos de uso:
+#
+#   docker compose up                 -> a pilha inteira, sem precisar de .NET instalado
+#   docker compose up -d postgres     -> so o banco (desenvolvimento, com a aplicacao
+#                                        rodando no host: hot reload e debugger anexado)
+#
+# O padrao e o caminho completo de proposito: quem clona o repo pela primeira vez roda
+# `docker compose up` e espera ver o sistema no ar, nao so um banco vazio.
+
+x-connection-string: &connection-string
+  # Dentro da rede do compose o host e o nome do servico e a porta e a interna.
+  # A 5433 e so o mapeamento para fora, para nao colidir com um Postgres local.
+  ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=inferqueue;Username=inferqueue;Password=inferqueue"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,6 +29,51 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Roda uma vez, aplica as migrations e sai. API e worker so sobem depois que ele
+  # termina com sucesso, entao nenhuma instancia encontra um schema pela metade.
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrator
+    container_name: inferqueue-migrator
+    environment:
+      # O bundle sobe o host da API para descobrir o DbContext, entao ele le a
+      # configuracao pelo mesmo caminho da aplicacao, e nao por argumento de linha
+      # de comando. Sem esta variavel, o AddInfrastructure falha no fail-fast.
+      <<: *connection-string
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: src/InferQueue.Api/Dockerfile
+    container_name: inferqueue-api
+    environment:
+      <<: *connection-string
+      # Development aqui e proposital: e o que deixa o Scalar acessivel na demonstracao.
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5051:8080"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/InferQueue.Worker/Dockerfile
+    container_name: inferqueue-worker
+    environment:
+      <<: *connection-string
+      # Vazio faz o worker cair no cliente falso: a pilha sobe sem chave nenhuma.
+      # Para usar o modelo de verdade, defina OPENAI_API_KEY em um arquivo .env.
+      Llm__ApiKey: "${OPENAI_API_KEY:-}"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
 
 volumes:
   postgres-data:
