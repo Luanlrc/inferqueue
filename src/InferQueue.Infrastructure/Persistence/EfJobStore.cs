@@ -25,10 +25,10 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
         }
         catch (DbUpdateException ex)
             when (ex.InnerException is PostgresException
-                  {
-                      SqlState: UniqueViolation,
-                      ConstraintName: InFlightUniqueIndex
-                  })
+            {
+                SqlState: UniqueViolation,
+                ConstraintName: InFlightUniqueIndex
+            })
         {
             // Outra requisicao criou o mesmo job no intervalo entre a consulta e o insert.
             // O banco e quem arbitra a corrida; aqui so traduzimos para a linguagem do dominio.
@@ -164,7 +164,16 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
 
     public async Task UpdateAsync(Job job, CancellationToken ct = default)
     {
-        db.Jobs.Update(job);
+        var entry = db.Jobs.Update(job);
+
+        // Update marca a entidade inteira como modificada, e como o change tracker esta
+        // limpo o EF nao tem baseline para comparar. Estas quatro colunas nunca mudam
+        // depois da criacao: marca-las como nao modificadas evita reescrever o input_text,
+        // que pode ter 10.000 caracteres, a cada troca de status ou retry.
+        entry.Property(j => j.InputHash).IsModified = false;
+        entry.Property(j => j.InputText).IsModified = false;
+        entry.Property(j => j.Model).IsModified = false;
+        entry.Property(j => j.CreatedAt).IsModified = false;
 
         try
         {
@@ -172,10 +181,10 @@ internal sealed class EfJobStore(InferQueueDbContext db) : IJobStore
         }
         catch (DbUpdateException ex)
             when (ex.InnerException is PostgresException
-                  {
-                      SqlState: UniqueViolation,
-                      ConstraintName: InFlightUniqueIndex
-                  })
+            {
+                SqlState: UniqueViolation,
+                ConstraintName: InFlightUniqueIndex
+            })
         {
             // Acontece ao reenfileirar um job da dead-letter enquanto outro job com o
             // mesmo conteudo ja voltou a rodar.

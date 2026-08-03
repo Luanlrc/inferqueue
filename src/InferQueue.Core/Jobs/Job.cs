@@ -9,6 +9,8 @@ namespace InferQueue.Core.Jobs;
 /// </summary>
 public sealed class Job
 {
+    private static readonly JsonSerializerOptions ResultSerializerOptions = new(JsonSerializerDefaults.Web);
+
     // O EF Core precisa de um construtor sem parametros; ele consegue usar um privado.
     private Job()
     {
@@ -155,6 +157,4 @@ public sealed class Job
                 $"Job {Id} esta em {Status}; so um job em {nameof(JobStatus.Processing)} pode ser finalizado.");
         }
     }
-
-    private static readonly JsonSerializerOptions ResultSerializerOptions = new(JsonSerializerDefaults.Web);
 }
