@@ -12,16 +12,16 @@ Chamar uma LLM dentro do ciclo de um request HTTP parece simples até entrar em 
 - **A chamada leva segundos.** O cliente fica pendurado esperando, e um pico de tráfego
   vira timeout em cascata.
 - **O provedor falha.** 429 por rate limit, 500 por instabilidade, conexão que cai no meio.
-  Sem uma fila, o pedido do usuário simplesmente se perde — e ninguém fica sabendo por quê.
+  Sem uma fila, o pedido do usuário simplesmente se perde, e ninguém fica sabendo por quê.
 - **O mesmo texto é enviado mais de uma vez.** Um retry do cliente, um duplo clique, um
-  reprocessamento em lote — e você paga duas vezes pela mesma resposta.
+  reprocessamento em lote, e você paga duas vezes pela mesma resposta.
 - **O custo é invisível.** Descobre-se quanto foi gasto quando a fatura chega, sem saber
   qual modelo ou qual parte do sistema consumiu.
 
 O InferQueue resolve os quatro. O pedido entra numa fila persistida em Postgres e a API
 responde na hora com um identificador. Um worker consome a fila, chama o modelo, e
 registra resultado, tokens e custo. Se falhar, tenta de novo com espera crescente; se
-esgotar as tentativas, o job vai para uma dead-letter com o motivo gravado — nada
+esgotar as tentativas, o job vai para uma dead-letter com o motivo gravado, nada
 desaparece em silêncio.
 
 ## Escopo
@@ -31,7 +31,7 @@ desaparece em silêncio.
 | | |
 |---|---|
 | Fila durável | Em Postgres, sobrevive a restart e deploy |
-| Reserva concorrente | `FOR UPDATE SKIP LOCKED` — N workers sem pisar um no outro |
+| Reserva concorrente | `FOR UPDATE SKIP LOCKED`, N workers sem pisar um no outro |
 | Lease e recuperação | Worker que morre no meio não deixa job travado |
 | Retry com backoff | Exponencial, com jitter, e distinção entre falha transitória e permanente |
 | Dead-letter | Com endpoint para reenfileirar depois de corrigir a causa |
@@ -68,7 +68,7 @@ Pending ──reserva──> Processing ──sucesso──> Done
 ## Rodando
 
 **Sem chave da OpenAI o sistema funciona.** Quando `Llm:ApiKey` está vazia, o worker usa um
-cliente falso que devolve resposta simulada — dá para ver a fila, a reserva concorrente, o
+cliente falso que devolve resposta simulada, dá para ver a fila, a reserva concorrente, o
 retry e a contabilidade de ponta a ponta sem gastar nada.
 
 ### Tudo em contêiner
@@ -95,7 +95,7 @@ contêiner:
 docker compose up -d postgres
 ```
 
-O schema é criado por migration — não crie tabela na mão, ou o EF Core sai de sincronia:
+O schema é criado por migration, não crie tabela na mão, ou o EF Core sai de sincronia:
 
 ```bash
 dotnet tool install --global dotnet-ef
@@ -133,13 +133,13 @@ Com a aplicação no ar, a especificação OpenAPI é gerada e servida por ela m
 | Especificação OpenAPI (JSON) | http://localhost:5051/openapi/v1.json |
 
 A interface lista todos os endpoints, os schemas de request e response, e permite disparar
-chamadas direto do navegador — não precisa de curl nem Postman para experimentar.
+chamadas direto do navegador, não precisa de curl nem Postman para experimentar.
 
 **Não é o Swagger UI.** A partir do .NET 9 a Microsoft removeu o Swashbuckle dos templates:
 o pacote `Microsoft.AspNetCore.OpenApi` gera o documento OpenAPI, e a interface fica por
 conta de outra biblioteca. Aqui é o [Scalar](https://github.com/scalar/scalar). O documento
 em `/openapi/v1.json` é OpenAPI padrão, então serve em qualquer ferramenta que leia
-OpenAPI — inclusive um Swagger UI apontado para ele, se você preferir a interface clássica.
+OpenAPI, inclusive um Swagger UI apontado para ele, se você preferir a interface clássica.
 
 **As duas rotas só existem em `Development`.** Em produção ficam desligadas, que é o
 comportamento correto: não se expõe o mapa da API para o mundo sem motivo. Subindo por
@@ -171,7 +171,7 @@ Erros seguem `ProblemDetails` (RFC 9457).
 ## Decisões de engenharia
 
 **A reserva é atômica, e a transação fecha antes da chamada ao modelo.** Um CTE seleciona
-com `FOR UPDATE SKIP LOCKED` e já faz o `UPDATE ... RETURNING` na mesma instrução — não
+com `FOR UPDATE SKIP LOCKED` e já faz o `UPDATE ... RETURNING` na mesma instrução, não
 existe janela entre ver o job e reservá-lo. `SKIP LOCKED` faz cada worker pular o que outro
 já travou em vez de esperar; sem isso, N workers formam fila atrás do mesmo job e o
 paralelismo vira zero. A transação fecha logo em seguida: segurar lock de banco durante
@@ -196,7 +196,7 @@ são: insistir só gasta tentativa e atrasa a fila. Vão direto para a dead-lett
 **A deduplicação não confia na consulta prévia.** Buscar um job igual antes de inserir
 resolve o caso comum, mas não a corrida entre duas requisições simultâneas. Quem resolve é
 um índice único parcial sobre jobs em andamento: o insert perdedor vira exceção de domínio,
-a API relê e devolve o vencedor. Verificado com 10 requisições concorrentes — uma linha
+a API relê e devolve o vencedor. Verificado com 10 requisições concorrentes, uma linha
 criada, o mesmo id nas dez respostas.
 
 O índice é parcial de propósito. Uma versão anterior exigia unicidade sobre jobs
@@ -207,13 +207,13 @@ correto é sobre trabalho em andamento, não sobre histórico.
 processamento, mas o job fica com custo nulo e é contado à parte no relatório. Zero
 desapareceria dentro de um `SUM` e faria o total parecer menor do que é.
 
-**O tempo entra por `TimeProvider`.** Nada de `DateTime.Now` espalhado — é o que torna
+**O tempo entra por `TimeProvider`.** Nada de `DateTime.Now` espalhado, é o que torna
 backoff e expiração de lease testáveis sem esperar o relógio.
 
 **As migrations são aplicadas por um _migration bundle_.** Um serviço do compose roda uma
 vez, aplica o schema e sai; API e worker só sobem depois que ele termina com sucesso. O
 bundle é um executável autocontido gerado no build, o que permite à imagem final não levar
-nem o SDK nem o tooling do EF — ela roda sobre `runtime-deps`, só com as bibliotecas
+nem o SDK nem o tooling do EF, ela roda sobre `runtime-deps`, só com as bibliotecas
 nativas. A alternativa comum, chamar `Database.Migrate()` no startup da aplicação, faz
 instâncias concorrentes disputarem a migração.
 
@@ -223,8 +223,8 @@ instâncias concorrentes disputarem a migração.
 dotnet test
 ```
 
-36 testes. Os unitários cobrem o domínio puro — política de retry, transições de estado,
-cálculo de custo — e rodam em milissegundos.
+36 testes. Os unitários cobrem o domínio puro, política de retry, transições de estado,
+cálculo de custo, e rodam em milissegundos.
 
 Os de integração sobem **Postgres real** via Testcontainers, na mesma imagem do
 `docker-compose`, porque metade do que importa aqui não existe em banco de mentira: o
