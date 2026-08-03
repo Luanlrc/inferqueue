@@ -123,6 +123,34 @@ dotnet user-secrets set "Llm:ApiKey" "sk-..." --project src/InferQueue.Worker
 
 ## API
 
+### Documentação interativa
+
+Com a aplicação no ar, a especificação OpenAPI é gerada e servida por ela mesma:
+
+| | |
+|---|---|
+| Interface para explorar e testar | http://localhost:5051/scalar/v1 |
+| Especificação OpenAPI (JSON) | http://localhost:5051/openapi/v1.json |
+
+A interface lista todos os endpoints, os schemas de request e response, e permite disparar
+chamadas direto do navegador — não precisa de curl nem Postman para experimentar.
+
+**Não é o Swagger UI.** A partir do .NET 9 a Microsoft removeu o Swashbuckle dos templates:
+o pacote `Microsoft.AspNetCore.OpenApi` gera o documento OpenAPI, e a interface fica por
+conta de outra biblioteca. Aqui é o [Scalar](https://github.com/scalar/scalar). O documento
+em `/openapi/v1.json` é OpenAPI padrão, então serve em qualquer ferramenta que leia
+OpenAPI — inclusive um Swagger UI apontado para ele, se você preferir a interface clássica.
+
+**As duas rotas só existem em `Development`.** Em produção ficam desligadas, que é o
+comportamento correto: não se expõe o mapa da API para o mundo sem motivo. Subindo por
+`docker compose up`, o ambiente já vem como `Development` no compose. Rodando no host,
+`dotnet run` usa o perfil `http` do `launchSettings.json`, que também define `Development`
+e abre o navegador direto na documentação.
+
+Se as duas rotas derem 404, é sinal de que a aplicação está rodando como `Production`.
+
+### Endpoints
+
 | Método | Rota | O que faz |
 |---|---|---|
 | `POST` | `/v1/jobs` | Enfileira. `202` com o id, ou `200` com o resultado se já existia |
