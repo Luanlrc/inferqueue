@@ -1,10 +1,11 @@
 # Dois modos de uso:
 #
-#   docker compose up -d              -> so o Postgres (desenvolvimento, com a aplicacao
+#   docker compose up                 -> a pilha inteira, sem precisar de .NET instalado
+#   docker compose up -d postgres     -> so o banco (desenvolvimento, com a aplicacao
 #                                        rodando no host: hot reload e debugger anexado)
-#   docker compose --profile full up  -> a pilha inteira, sem precisar de .NET instalado
 #
-# Servicos sem 'profiles' sobem sempre, entao o Postgres participa dos dois modos.
+# O padrao e o caminho completo de proposito: quem clona o repo pela primeira vez roda
+# `docker compose up` e espera ver o sistema no ar, nao so um banco vazio.
 
 x-connection-string: &connection-string
   # Dentro da rede do compose o host e o nome do servico e a porta e a interna.
@@ -38,13 +39,12 @@ services:
     container_name: inferqueue-migrator
     environment:
       # O bundle sobe o host da API para descobrir o DbContext, entao ele le a
-      # configuracao pelo mesmo caminho da aplicacao — nao por argumento de linha
+      # configuracao pelo mesmo caminho da aplicacao, e nao por argumento de linha
       # de comando. Sem esta variavel, o AddInfrastructure falha no fail-fast.
       <<: *connection-string
     depends_on:
       postgres:
         condition: service_healthy
-    profiles: ["full"]
 
   api:
     build:
@@ -60,7 +60,6 @@ services:
     depends_on:
       migrator:
         condition: service_completed_successfully
-    profiles: ["full"]
 
   worker:
     build:
@@ -69,13 +68,12 @@ services:
     container_name: inferqueue-worker
     environment:
       <<: *connection-string
-      # Vazio faz o worker cair no cliente falso — a pilha sobe sem chave nenhuma.
+      # Vazio faz o worker cair no cliente falso: a pilha sobe sem chave nenhuma.
       # Para usar o modelo de verdade, defina OPENAI_API_KEY em um arquivo .env.
       Llm__ApiKey: "${OPENAI_API_KEY:-}"
     depends_on:
       migrator:
         condition: service_completed_successfully
-    profiles: ["full"]
 
 volumes:
   postgres-data:

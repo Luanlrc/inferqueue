@@ -76,7 +76,7 @@ retry e a contabilidade de ponta a ponta sem gastar nada.
 Requer apenas Docker.
 
 ```bash
-docker compose --profile full up
+docker compose up
 ```
 
 Sobe o Postgres, espera ele aceitar conexão, aplica as migrations e só então levanta API e
@@ -88,10 +88,11 @@ Para usar o modelo de verdade, copie `.env.example` para `.env` e preencha
 
 ### Desenvolvimento, com a aplicação no host
 
-Melhor para iterar: hot reload e debugger anexado. Requer .NET 10.
+Melhor para iterar: hot reload e debugger anexado. Requer .NET 10. Aqui só o banco sobe em
+contêiner:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
 ```
 
 O schema é criado por migration — não crie tabela na mão, ou o EF Core sai de sincronia:
